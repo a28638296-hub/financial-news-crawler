@@ -1,0 +1,107 @@
+{
+  "mode": "financial_news",
+  "request_timeout": 8,
+  "feeds": [
+    {
+      "id": "sina_live_cn",
+      "name": "新浪财经全球快讯",
+      "kind": "媒体报道",
+      "url": "https://finance.sina.com.cn/7x24/",
+      "endpoint": "https://zhibo.sina.com.cn/api/zhibo/feed",
+      "format": "sina_live",
+      "max_pages": 8,
+      "enabled": true
+    },
+    {
+      "id": "wallstreetcn_cn",
+      "name": "华尔街见闻公开快讯",
+      "kind": "媒体报道",
+      "url": "https://wallstreetcn.com/live/global",
+      "endpoint": "https://api-one.wallstcn.com/apiv1/content/lives",
+      "format": "wallstreetcn",
+      "max_pages": 8,
+      "enabled": true
+    },
+    {
+      "id": "bea",
+      "name": "BEA 美国经济分析局",
+      "kind": "官方宏观公告",
+      "url": "https://apps.bea.gov/rss/rss.xml",
+      "enabled": true
+    },
+    {
+      "id": "fed_speeches",
+      "name": "美联储官员讲话",
+      "kind": "官方宏观公告",
+      "url": "https://www.federalreserve.gov/feeds/speeches.xml",
+      "enabled": true
+    },
+    {
+      "id": "ecb",
+      "name": "欧洲央行",
+      "kind": "官方宏观公告",
+      "url": "https://www.ecb.europa.eu/rss/press.html",
+      "enabled": true
+    },
+    {
+      "id": "cnbc_economy",
+      "name": "CNBC 经济",
+      "kind": "媒体报道",
+      "url": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+      "enabled": true
+    },
+    {
+      "id": "cnbc_finance",
+      "name": "CNBC 金融",
+      "kind": "媒体报道",
+      "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+      "enabled": true
+    },
+    {
+      "id": "cnbc_world",
+      "name": "CNBC 全球市场",
+      "kind": "媒体报道",
+      "url": "https://www.cnbc.com/id/100003241/device/rss/rss.html",
+      "enabled": true
+    },
+    {
+      "id": "ft",
+      "name": "Financial Times 综合财经",
+      "kind": "媒体报道",
+      "url": "https://www.ft.com/rss/home",
+      "enabled": true
+    },
+    {
+      "id": "marketwatch",
+      "name": "MarketWatch 综合财经",
+      "kind": "媒体报道",
+      "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+      "enabled": true
+    },
+    {
+      "id": "fed_monetary",
+      "name": "美联储货币政策",
+      "kind": "官方宏观公告",
+      "url": "https://www.federalreserve.gov/feeds/press_monetary.xml",
+      "enabled": true
+    },
+    {
+      "id": "fed_all",
+      "name": "美联储公告",
+      "kind": "官方宏观公告",
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+      "enabled": true
+    },
+    {
+      "id": "cnbc",
+      "name": "CNBC Top News",
+      "kind": "媒体报道",
+      "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+      "enabled": true
+    }
+  ],
+  "network": {
+    "allow_proxy_fallback": false
+  },
+  "max_workers": 3
+}

@@ -1,0 +1,4 @@
+requests==2.34.2
+feedparser==6.0.14
+parsel==1.12.1
+tzdata==2026.6

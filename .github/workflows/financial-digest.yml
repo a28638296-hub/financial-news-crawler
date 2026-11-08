@@ -1,0 +1,78 @@
+name: Financial news digest
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: Origin of this delivery check
+        type: string
+        default: manual
+      preview:
+        description: Generate a report without sending email
+        type: boolean
+        default: true
+  schedule:
+    # Best-effort fallback. An external timer can dispatch at 02:00 / 12:00 UTC.
+    - cron: '7,17,47 2,12 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: financial-news-delivery
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.event_name == 'workflow_dispatch' && inputs.preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - run: python -B -m unittest discover -p "test_*.py"
+      - run: python -B cloud_run.py --preview
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: financial-preview-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: |
+            output/最新金融重点.txt
+            output/最新金融总结.html
+            output/run-status.json
+  delivery:
+    if: github.event.repository.private && vars.ENABLE_DELIVERY == 'true' && !inputs.preview
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - run: python -B -m unittest discover -p "test_*.py"
+      - run: python -B cloud_run.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
+          QQ_SMTP_AUTH_CODE: ${{ secrets.QQ_SMTP_AUTH_CODE }}
+          DIGEST_CONTROL_URL: ${{ secrets.DIGEST_CONTROL_URL }}
+          DIGEST_CONTROL_KEY: ${{ secrets.DIGEST_CONTROL_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: financial-digest-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          path: |
+            output/最新金融重点.txt
+            output/最新金融总结.html
+            output/run-status.json
+            output/finance-data/*/research.json
+            output/finance-data/*/financial-brief.json
+            output/finance-data/*/financial-brief.txt
