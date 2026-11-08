@@ -38,6 +38,10 @@ class QualityTests(unittest.TestCase):
         self.assertFalse(same_financial_event(a,fact('美国10月通胀率回落至3.5%，符合市场预期')))
         self.assertFalse(same_financial_event(a,fact('美国10月通胀率回落至3.2%，不符合市场预期')))
         self.assertFalse(same_financial_event(a,fact(a['title'],minutes=500)))
+        self.assertFalse(same_financial_event(fact('通胀率1.5%'),fact('通胀率15%')))
+        self.assertFalse(same_financial_event(fact('经济增速-0.2%'),fact('经济增速0.2%')))
+        self.assertFalse(same_financial_event(fact('同比变化2%'),fact('同比变化2')))
+        self.assertFalse(same_financial_event(fact(''),fact('')))
 
     def test_similar_headlines_keep_different_countries_and_speakers(self):
         self.assertFalse(same_financial_event(fact('美国10月通胀率回落至3.2%，符合市场预期'),

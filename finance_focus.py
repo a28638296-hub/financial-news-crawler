@@ -29,13 +29,13 @@ def same_financial_event(left,right):
     raw_titles=[re.sub(r'^(?:(?:最新(?:消息)?|快讯|消息|报道|即时|更新)[：:\s]+|【(?:最新|快讯|更新)】)+',
                        '',str(item.get('title','')).strip()).casefold() for item in (left,right)]
     titles=[re.sub(r'[^\w]','',title) for title in raw_titles]
-    if min(map(len,titles))<12:return titles[0]==titles[1]
-    if re.findall(r'\d+(?:\.\d+)?',raw_titles[0]) != re.findall(r'\d+(?:\.\d+)?',raw_titles[1]):return False
+    numbers=r'[-+−－]?\d+(?:[.,]\d+)*[%％]?'
+    if re.findall(numbers,raw_titles[0]) != re.findall(numbers,raw_titles[1]):return False
     direction=r'不|未|否认|取消|上升|下降|增长|减少|上调|下调|加息|降息|上涨|下跌|维持|暂停|\b(?:not|no|rise|fall|cut|hike)\b'
     if set(re.findall(direction,raw_titles[0])) != set(re.findall(direction,raw_titles[1])):return False
     # High edit similarity can merge US/UK releases or different speakers.
     # Unknown wording changes stay separate until semantic evidence is available.
-    return titles[0] == titles[1]
+    return bool(titles[0]) and titles[0] == titles[1]
 
 
 def relevant_financial_news(item):
