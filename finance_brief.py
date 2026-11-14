@@ -15,7 +15,7 @@ from finance_overview import classify, CATEGORIES, CHINESE_CATEGORIES
 from finance_focus import select_focus_news, priority, validate_focus_text, FORBIDDEN_OUTPUT, persist_focus_views, focus_category, focus_excerpt, same_financial_event, published_time, HYPE
 
 SG = ZoneInfo("Asia/Singapore")
-VERSION = "chinese-financial-focus-v3.3"
+VERSION = "chinese-financial-focus-v3.4"
 SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
@@ -110,7 +110,9 @@ def evidence_packet(snapshot):
                       "category": focus_category(item) if focus_mode else classify(item), "importance": item.get('importance', 0),
                       "selection_priority": priority(item, now) if focus_mode else 0,
                       "published_at": item["published_at"], "time_kind": item.get("time_kind"), "background": at < cutoff or item.get("time_kind") != "published",
-                      "sources": [source["name"] for source in item.get("sources", [])]})
+                      "sources": [source["name"] for source in item.get("sources", [])],
+                      "source_excerpt": item.get('history_source_excerpt') or excerpt[:700],
+                      "is_update": bool(item.get('is_update'))})
         urls[evidence_id] = item["url"]
     packet = {"report_at_singapore": now.astimezone(SG).isoformat(), "news_window_hours": 24,
               "focus_only": focus_mode,
@@ -317,6 +319,8 @@ def local_news_brief(packet):
         headline=re.sub(r'[！!]+','',fact['title']).strip()
         if packet.get('focus_only') and 8<=len(headline)<=46 and not re.search(r'[？?]',headline) and not FORBIDDEN_OUTPUT.search(headline) and not HYPE.search(headline) and len(re.findall(r'[\u3400-\u9fff]',headline))>=5:
             title=headline
+        if fact.get('is_update'):
+            title=next(label for category,label,_,_ in CATEGORIES if category==key)+' · 新增信息'
         sources=fact.get('sources') or []
         attribution='、'.join(sources[:2]) if sources else '公开报道'
         points.append({'title': title, 'fact': f'{at:%m月%d日 %H:%M}，{attribution}：{excerpt}',

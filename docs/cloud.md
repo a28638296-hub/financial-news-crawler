@@ -32,7 +32,7 @@
 {"action":"ack","slot":"2026-01-01T10:00:00+08:00","status":"sent","accepted_at":"2026-01-01T02:00:30+00:00","run_id":"123456"}
 ```
 
-认证使用 `Authorization: Bearer <DIGEST_CONTROL_KEY>`。可能的状态还有 `sending`、`uncertain`，这两种状态不代表邮件已被接受，回调接收方应停止自动重复发送并提示人工核对。`accepted_at` 可能为空。项目只提供回调客户端，独立定时器及回调接收端需要自行部署，不包含维护者的服务器配置。
+认证使用 `Authorization: Bearer <DIGEST_CONTROL_KEY>`。`sending`、`uncertain` 表示投递结果不明确，应停止自动重复发送并提示人工核对。`no_updates` 表示本时段没有新增内容，正常完成且不发邮件；接收方和定时器应把它作为本时段的终态。`accepted_at` 可能为空。项目只提供回调客户端，独立定时器及回调接收端需要自行部署，不包含维护者的服务器配置。
 
 检查 `output/run-status.json` 或运行日志：
 
@@ -42,6 +42,7 @@
 | `sent` | SMTP 服务器已接受，不等于确认进了收件箱 |
 | `sent` + `skipped: true` | 此时段已接受，未重复发信 |
 | `failed` | 工作失败，需检查失败步骤和来源状态 |
+| `no_updates` | 本时段只有已发送过的内容，正常完成且未发送邮件 |
 | `sending` / `uncertain` | SMTP 或记录结果不明确，先核对邮箱，不能盲目重试 |
 
 不要删除 `.delivery-state.json` 来强制重发。超过当前时段 3 小时且未成功发送，会报告错过窗口；有新鲜新闻不足、SMTP 拒绝、网络失败等情况时不会假报成功。云端运行不需要本机开机。

@@ -12,6 +12,7 @@ finance-data/
 logs/
 backups/
 .delivery-state.json
+sent-history.json
 email_config.json
 *.log
 *.zip

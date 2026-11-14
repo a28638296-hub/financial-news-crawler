@@ -17,9 +17,10 @@ from zoneinfo import ZoneInfo
 import requests
 from cloud_collect import fetch_feed
 from finance_core import merge_news
-from finance_focus import relevant_financial_news, focus_summary, validate_focus_text, persist_focus_views
+from finance_focus import relevant_financial_news, focus_summary, validate_focus_text, persist_focus_views, published_time
 from finance_brief import evidence_packet, local_news_brief, render_text
 from digest_config import load_config
+from finance_history import sent_history, trim_history, select_new_content, delivered_items
 
 ROOT = Path(__file__).resolve().parent
 RUN_OUTPUT = ROOT / 'output'
@@ -73,7 +74,7 @@ def delivery_key(slot, recipient):
 
 
 def report_delivery(slot, result):
-    """Only acknowledge SMTP acceptance/ambiguity, never just a successful job."""
+    """Acknowledge SMTP outcomes or an explicit no-new-content completion."""
     url=os.environ.get('DIGEST_CONTROL_URL');key=os.environ.get('DIGEST_CONTROL_KEY')
     if not url or not key:return
     with requests.Session() as session:
@@ -84,10 +85,10 @@ def report_delivery(slot, result):
         if response.status_code!=200:raise RuntimeError('独立定时器未确认投递记录')
 
 
-def send_once(ledger, slot, recipient, password, text, smtp_factory=None):
+def send_once(ledger, slot, recipient, password, text, smtp_factory=None, news_items=None):
     key=delivery_key(slot,recipient)
     previous=ledger.data['deliveries'].get(key,{})
-    if previous.get('status') in {'sent','sending','uncertain'}:
+    if previous.get('status') in {'sent','sending','uncertain','no_updates'}:
         return {'status':previous['status'], 'skipped':True}
     validate_focus_text(text)
     if any(token in text.lower() for token in ('https://','http://','www.')):
@@ -100,7 +101,8 @@ def send_once(ledger, slot, recipient, password, text, smtp_factory=None):
     message['Auto-Submitted']='auto-generated';message.set_content(text,charset='utf-8')
     factory=smtp_factory or smtplib.SMTP_SSL
     client=None;started=False
-    row={'slot':slot,'run_id':os.environ.get('GITHUB_RUN_ID'),'attempted_at':datetime.now(timezone.utc).isoformat()}
+    row={'slot':slot,'run_id':os.environ.get('GITHUB_RUN_ID'),'attempted_at':datetime.now(timezone.utc).isoformat(),
+         'news_items':news_items or []}
     try:
         client=factory('smtp.qq.com',465,timeout=30,context=ssl.create_default_context())
         client.login(recipient,password)
@@ -122,7 +124,7 @@ def send_once(ledger, slot, recipient, password, text, smtp_factory=None):
             except Exception:client.close()
 
 
-def collect_brief(now, config_path=None, output_dir=None):
+def collect_brief(now, config_path=None, output_dir=None, history=None):
     started=perf_counter()
     config=load_config(config_path or ROOT/'finance_config.json')
     output_dir=Path(output_dir or ROOT/'output')
@@ -136,14 +138,25 @@ def collect_brief(now, config_path=None, output_dir=None):
     incoming.sort(key=lambda item:(item.get('url',''),item.get('published_at') or '',item.get('title','')))
     statuses.sort(key=lambda status:status['id'])
     news=merge_news(incoming)
-    news=[item for item in news if relevant_financial_news(item)]
+    news=[item for item in news if relevant_financial_news(item) and item.get('time_kind')=='published'
+          and (at:=published_time(item.get('published_at'))) is not None and now-timedelta(hours=24)<=at<=now]
+    news,history_stats=select_new_content(news,history or [])
     data={'mode':'financial_news','created_at':now.isoformat(),'config':config,'news':news,'sources':statuses,
           'candidates':[],'prices':{},'market_overview':[],'treasury':{},'anomalies':[]}
     data['summary']=focus_summary(data)
     atomic_json(snapshot/'research.json',data);atomic_json(snapshot/'summary.json',data['summary'])
     packet,urls=evidence_packet(snapshot)
     brief=local_news_brief(packet)
+    details={'working_sources':sum(s['status'] in {'可用','窗口内无条目'} for s in statuses),
+             'fresh_sources':sum(s.get('in_window',0)>0 for s in statuses),
+             'rejected_entries':sum(s.get('rejected_entries',0) for s in statuses),
+             'duration_seconds':round(perf_counter()-started,2),
+             'failed_sources':[s['name'] for s in statuses if s['status']=='读取失败'],**history_stats}
     if not brief or not brief['points']:
+        if history_stats['suppressed_news'] and details['working_sources']:
+            text='本时段没有新增金融重点，已跳过此前发送过的内容，本次不发送邮件。'
+            persist_focus_views(output_dir,snapshot,data['summary'],text)
+            return None,{'points':0,'news_items':[],**details}
         raise RuntimeError('未取得新鲜金融重点，未发送旧闻或空白总结')
     brief['overview']='金融重点：按重要性整理过去24小时的金融事件及可能影响。'
     brief['caveat']='本版采用新闻重点摘录与规则分析；媒体报道不等于官方确认，影响解释为条件性分析。'
@@ -153,11 +166,7 @@ def collect_brief(now, config_path=None, output_dir=None):
     atomic_json(snapshot/'financial-brief.json',{'mode':'rules_summary','brief':brief,'evidence':packet,'source_urls':urls})
     (snapshot/'financial-brief.txt').write_text(text,encoding='utf-8')
     persist_focus_views(output_dir,snapshot,data['summary'],text)
-    return text,{'points':len(brief['points']),'working_sources':sum(s['status'] in {'可用','窗口内无条目'} for s in statuses),
-                 'fresh_sources':sum(s.get('in_window',0)>0 for s in statuses),
-                 'rejected_entries':sum(s.get('rejected_entries',0) for s in statuses),
-                 'duration_seconds':round(perf_counter()-started,2),
-                 'failed_sources':[s['name'] for s in statuses if s['status']=='读取失败']}
+    return text,{'points':len(brief['points']),'news_items':delivered_items(brief,packet,urls),**details}
 
 
 def main():
@@ -166,30 +175,46 @@ def main():
     parser.add_argument('--preview',action='store_true',default=os.environ.get('DIGEST_PREVIEW')=='true',help='仅采集与生成摘要，不发送邮件')
     parser.add_argument('--config',type=Path,default=ROOT/'finance_config.json',help='来源配置 JSON 文件')
     parser.add_argument('--output',type=Path,default=ROOT/'output',help='报告与诊断输出目录')
+    parser.add_argument('--history-file',type=Path,help='仅预览：读取本地已发内容列表，不修改历史')
+    parser.add_argument('--use-delivery-history',action='store_true',default=os.environ.get('DIGEST_HISTORY_PREVIEW')=='true',help='私有云端预览：只读加载投递历史')
     args=parser.parse_args()
     RUN_OUTPUT=args.output.resolve()
     now=datetime.now(timezone.utc);due=current_slot(now)
     # A manual recovery and a delayed scheduled run must share one delivery key.
     slot=due.isoformat()
-    ledger=None;recipient=None
+    ledger=None;recipient=None;history=[]
+    if args.history_file and not args.preview:raise ValueError('正式发送必须使用持久化投递历史')
+    if args.preview and args.history_file:
+        history=json.loads(args.history_file.read_text(encoding='utf-8'))
+        if not isinstance(history,list):raise ValueError('预览历史必须是内容记录列表')
+    if args.preview and args.use_delivery_history:
+        ledger=GitHubLedger()
+        history=sent_history(ledger.data,os.environ['QQ_EMAIL'],now)
     if not args.preview:
         if os.environ.get('GITHUB_ACTIONS')!='true':raise RuntimeError('正式发送仅允许在云端任务运行')
         recipient=os.environ['QQ_EMAIL'];password=os.environ['QQ_SMTP_AUTH_CODE']
         ledger=GitHubLedger()
+        history=sent_history(ledger.data,recipient,now)
+        trim_history(ledger.data,now)
         prior=ledger.data['deliveries'].get(delivery_key(slot,recipient),{})
-        if prior.get('status') in {'sent','sending','uncertain'}:
+        if prior.get('status') in {'sent','sending','uncertain','no_updates'}:
             report_delivery(slot,prior)
             finish({'status':prior['status'],'skipped':True,'slot':slot,
                     'accepted_at':prior.get('accepted_at')})
-            if prior['status']!='sent':raise RuntimeError('上次投递结果不确定，需要查看收件箱后处理')
+            if prior['status'] not in {'sent','no_updates'}:raise RuntimeError('上次投递结果不确定，需要查看收件箱后处理')
             return
         if now-due>timedelta(hours=3):
             print(json.dumps({'status':'missed_delivery_window','slot':slot}))
             raise RuntimeError('已错过发送窗口且没有成功投递记录')
-    text,details=collect_brief(now,config_path=args.config,output_dir=RUN_OUTPUT)
+    text,details=collect_brief(now,config_path=args.config,output_dir=RUN_OUTPUT,history=history)
+    news_items=details.pop('news_items',[])
     if args.preview:
         finish({'status':'preview','sent':False,**details});return
-    result=send_once(ledger,slot,recipient,password,text)
+    if text is None:
+        result={'status':'no_updates','slot':slot,'sent':False}
+        ledger.data['deliveries'][delivery_key(slot,recipient)]={**result,'attempted_at':now.isoformat(),'run_id':os.environ.get('GITHUB_RUN_ID')}
+        ledger.save();report_delivery(slot,result);finish({**result,**details});return
+    result=send_once(ledger,slot,recipient,password,text,news_items=news_items)
     report_delivery(slot,result)
     finish({**result,**details})
 
