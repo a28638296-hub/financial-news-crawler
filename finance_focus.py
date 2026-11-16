@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from finance_overview import classify, SG
 from finance_core import news_importance
+from technology_news import technology_category, TECH_KEYS, NOISE, SIGNIFICANT
 
 STOCK_STORY = re.compile(r'个股|股价|目标价|买入评级|卖出评级|涨停|跌停|连板|盘前[涨跌]|盘后[涨跌]|ETF|\b(?:shares? (?:jump|surge|fall|rise|drop)|price target|stock picks?|buy rating)\b', re.I)
 SYSTEMIC = re.compile(r'美联储|央行|通胀|非农|就业|失业|利率|国债|美债|信用|关税|制裁|原油|石油|黄金|外汇|汇率|全球|金融稳定|系统性|\b(?:inflation|federal reserve|central bank|treasury|tariff|gdp|cpi|pce|payroll)\b', re.I)
@@ -40,8 +41,9 @@ def same_financial_event(left,right):
 
 def relevant_financial_news(item):
     title = item.get('title', '')
-    if STOCK_STORY.search(title) or FORBIDDEN_OUTPUT.search(title) or ROUNDUP.search(title) or re.search(r'建议询问主管部门|不予置评|无可奉告',title):
+    if STOCK_STORY.search(title) or FORBIDDEN_OUTPUT.search(title) or ROUNDUP.search(title) or NOISE.search(title) or re.search(r'建议询问主管部门|不予置评|无可奉告',title):
         return False
+    if technology_category(item):return True
     category = classify(item)
     if category == 'industry' and not re.search(r'融资|债务|资本开支|资本支出|投资|需求|订单|产能|出口|供应链|供需|收入|营收|盈利|利润|成本|\b(?:financ|investment|demand|capacity|supply|revenue|profit|capital spending)', title, re.I):
         return False
@@ -50,6 +52,8 @@ def relevant_financial_news(item):
 
 def focus_category(item):
     """A dollar-denominated commodity is not an FX event just for saying USD."""
+    tech=technology_category(item)
+    if tech:return tech
     for text in (item.get('title', ''), item.get('summary', '')):
         if re.search(r'征求意见|监管规则|监管规定|暂行办法',text):
             return 'policy'
@@ -78,6 +82,7 @@ def priority(item, now):
     publishers = {urlsplit(src.get('url', '')).hostname for src in item.get('sources', [])} - {None}
     official = any(src.get('kind') == '官方宏观公告' for src in item.get('sources', []))
     return (5*bool(SYSTEMIC.search(item['title'])) + 3*official
+            + 4*bool(technology_category(item) and SIGNIFICANT.search(item['title']))
             + 2*news_importance(item.get('importance'))
             + min(max(len(publishers)-1, 0), 2) + max(0, 1-age/24))
 
@@ -86,14 +91,16 @@ def select_focus_news(news, now):
     fresh = [item for item in news if relevant_financial_news(item) and item.get('time_kind') == 'published'
              and (at:=published_time(item.get('published_at'))) is not None and now-timedelta(hours=24) <= at <= now]
     ranked = sorted(fresh, key=lambda item:(priority(item, now), item['published_at']), reverse=True)
-    counts, selected = {}, []
+    counts, selected, sections = {}, [], {'finance':0,'technology':0}
     for item in ranked:
         category = focus_category(item)
-        if counts.get(category, 0) >= 5:
+        section='technology' if category in TECH_KEYS else 'finance'
+        if counts.get(category, 0) >= 5 or sections[section]>=(12 if section=='technology' else 24):
             continue
         selected.append(item)
         counts[category] = counts.get(category, 0)+1
-        if len(selected) >= 24:
+        sections[section]+=1
+        if len(selected) >= 36:
             break
     return selected
 
@@ -105,11 +112,11 @@ def focus_summary(data):
     if any(src.get('covers_24h') is False or src.get('partial_error') for src in data['sources']):
         gaps.append('部分快讯来源有分页或覆盖限制，未收录不表示没有事件。')
     if not selected:
-        gaps.append('没有取得足够的新鲜金融重点，不使用旧闻补写。')
-    return {'mode':'financial_news', 'title':'每日热门金融重点', 'created_at':data['created_at'],
+        gaps.append('没有取得足够的新鲜金融或科技重点，不使用旧闻补写。')
+    return {'mode':'financial_news', 'title':'每日金融与科技重点', 'created_at':data['created_at'],
             'price_dates':[], 'gaps':gaps, 'selected_news_ids':[item['id'] for item in selected],
-            'selection_note':'按发布时间、来源重点标记、报道覆盖与宏观影响筛选；不代表全网热搜排名。',
-            'points':['聚焦宏观经济、央行与利率、债券信用、汇率、能源黄金、政策及重大行业变化。'],
+            'selection_note':'按发布时间、来源重点标记、报道覆盖、金融影响与科技重要性筛选；不代表全网热搜排名。',
+            'points':['聚焦金融事件及人工智能、芯片、软件云计算、网络安全、机器人和前沿科研。'],
             'highlights':[], 'stock_points':[], 'changes':[], 'note':'正文解释发生了什么、可能影响和后续关注。'}
 
 
@@ -122,12 +129,12 @@ def render_focus_html(summary, brief_text=''):
     at = datetime.fromisoformat(summary['created_at']).astimezone(SG).strftime('%Y-%m-%d %H:%M')
     body = brief_text or '金融信息已采集，中文重点正在整理。请稍后查看“最新金融重点.txt”。'
     gaps = ''.join('<li>'+escape(value)+'</li>' for value in summary['gaps'])
-    return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>每日热门金融重点</title><style>body{{margin:0;background:#f3f5f8;color:#203047;font:17px/1.9 'Microsoft YaHei',sans-serif}}main{{max-width:850px;margin:32px auto;padding:28px;background:white;border-radius:12px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}}small{{color:#63758a}}</style><main><h1>每日热门金融重点</h1><small>{at} · 新加坡时间</small><pre>{escape(body)}</pre><details><summary>信息覆盖情况</summary><ul>{gaps or '<li>本轮取得的信息见正文。</li>'}</ul><small>{escape(summary['selection_note'])}</small></details></main></html>'''
+    return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>每日金融与科技重点</title><style>body{{margin:0;background:#f3f5f8;color:#203047;font:17px/1.9 'Microsoft YaHei',sans-serif}}main{{max-width:850px;margin:32px auto;padding:28px;background:white;border-radius:12px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}}small{{color:#63758a}}</style><main><h1>每日金融与科技重点</h1><small>{at} · 新加坡时间</small><pre>{escape(body)}</pre><details><summary>信息覆盖情况</summary><ul>{gaps or '<li>本轮取得的信息见正文。</li>'}</ul><small>{escape(summary['selection_note'])}</small></details></main></html>'''
 
 
 def persist_focus_views(root, snapshot, summary, text):
     page = render_focus_html(summary, text)
-    markdown = '# 每日热门金融重点\n\n'+text
+    markdown = '# 每日金融与科技重点\n\n'+text
     for filename in ('report.html', 'summary.html'):
         (snapshot/filename).write_text(page, encoding='utf-8')
     (snapshot/'summary.md').write_text(markdown, encoding='utf-8')

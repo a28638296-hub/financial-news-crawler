@@ -98,10 +98,25 @@
       "kind": "媒体报道",
       "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
       "enabled": true
+    },
+    {
+      "id": "ithome_tech",
+      "name": "IT之家科技新闻",
+      "kind": "科技媒体报道",
+      "url": "https://www.ithome.com/rss/",
+      "enabled": true
+    },
+    {
+      "id": "solidot_tech",
+      "name": "Solidot科技与科研",
+      "kind": "科技媒体报道",
+      "url": "https://www.solidot.org/index.rss",
+      "enabled": true
     }
   ],
   "network": {
     "allow_proxy_fallback": false
   },
-  "max_workers": 3
+  "max_workers": 3,
+  "watchlist_note": "整理金融与科技重点，不进行证券筛选。"
 }

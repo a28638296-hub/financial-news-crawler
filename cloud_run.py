@@ -95,7 +95,7 @@ def send_once(ledger, slot, recipient, password, text, smtp_factory=None, news_i
         raise ValueError('邮件含链接，未发送')
     message=EmailMessage()
     message['From']=recipient;message['To']=recipient
-    message['Subject']='每日金融重点｜'+datetime.now(SG).strftime('%Y-%m-%d %H:%M')
+    message['Subject']='每日金融与科技重点｜'+datetime.now(SG).strftime('%Y-%m-%d %H:%M')
     message['Date']=format_datetime(datetime.now(timezone.utc))
     message['Message-ID']=f'<financial-cloud-{key[:40]}@qq.com>'
     message['Auto-Submitted']='auto-generated';message.set_content(text,charset='utf-8')
@@ -154,12 +154,12 @@ def collect_brief(now, config_path=None, output_dir=None, history=None):
              'failed_sources':[s['name'] for s in statuses if s['status']=='读取失败'],**history_stats}
     if not brief or not brief['points']:
         if history_stats['suppressed_news'] and details['working_sources']:
-            text='本时段没有新增金融重点，已跳过此前发送过的内容，本次不发送邮件。'
+            text='本时段没有新增金融或科技重点，已跳过此前发送过的内容，本次不发送邮件。'
             persist_focus_views(output_dir,snapshot,data['summary'],text)
             return None,{'points':0,'news_items':[],**details}
-        raise RuntimeError('未取得新鲜金融重点，未发送旧闻或空白总结')
-    brief['overview']='金融重点：逐条分析新增事件、可能影响，并对照相关线索。'
-    brief['caveat']='本版依据报道内容与经济传导规则分析；媒体报道不等于官方确认，可能影响及事件关联不代表已发生的市场反应或已证实因果。'
+        raise RuntimeError('未取得新鲜金融或科技重点，未发送旧闻或空白总结')
+    brief['overview']='金融与科技重点：逐条分析新增事件、可能影响，并对照相关线索。'
+    brief['caveat']='本版依据报道内容、事件类型与传导规则分析；媒体报道不等于官方确认，可能影响及事件关联不代表已发生的市场反应或已证实因果。'
     if data['summary']['gaps']:
         brief['caveat']+='部分来源覆盖有限。'
     text=render_text(brief,packet);validate_focus_text(text)
@@ -168,12 +168,14 @@ def collect_brief(now, config_path=None, output_dir=None, history=None):
     persist_focus_views(output_dir,snapshot,data['summary'],text)
     return text,{'points':len(brief['points']),'analyzed_events':sum(bool(p.get('analysis')) for p in brief['points']),
                 'event_connections':len(brief.get('connections',[])),
+                'financial_events':sum(p.get('section')=='finance' for p in brief['points']),
+                'technology_events':sum(p.get('section')=='technology' for p in brief['points']),
                 'news_items':delivered_items(brief,packet,urls),**details}
 
 
 def main():
     global RUN_OUTPUT
-    parser=argparse.ArgumentParser(description='采集公开金融新闻并生成中文重点摘要')
+    parser=argparse.ArgumentParser(description='采集公开金融与科技新闻并生成中文重点摘要')
     parser.add_argument('--preview',action='store_true',default=os.environ.get('DIGEST_PREVIEW')=='true',help='仅采集与生成摘要，不发送邮件')
     parser.add_argument('--config',type=Path,default=ROOT/'finance_config.json',help='来源配置 JSON 文件')
     parser.add_argument('--output',type=Path,default=ROOT/'output',help='报告与诊断输出目录')

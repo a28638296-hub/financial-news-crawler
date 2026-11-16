@@ -6,6 +6,7 @@ import unicodedata
 
 from finance_core import canonical_url
 from finance_focus import focus_excerpt, focus_category
+from technology_news import TECH_KEYS
 
 HISTORY_DAYS = 30
 BLOCKING_STATES = {'sent', 'sending', 'uncertain'}
@@ -73,7 +74,12 @@ def select_new_content(items, history):
             same_title = bool(normalized(info['title'])) and normalized(info['title']) == normalized(old.get('title'))
             # Exact factual overlap can identify a renamed/reprinted story.
             # Different countries or quoted speakers must not be conflated.
-            compatible = info['category'] == old.get('category') and subject(info['title']) == subject(old.get('title', ''))
+            # Existing industry stories may move into the new technology section.
+            # Preserve exact-fact overlap across that migration, not arbitrary
+            # paraphrases or different speakers/countries.
+            categories={info['category'],old.get('category')}
+            same_category=len(categories)==1 or ('industry' in categories and bool(categories & TECH_KEYS))
+            compatible = same_category and subject(info['title']) == subject(old.get('title', ''))
             old_parts = {normalized(s) for s in sentences(old.get('content', ''))}
             overlap = compatible and any(len(normalized(s)) >= 18 and normalized(s) in old_parts for s in body_parts)
             if same_article or same_title or overlap:

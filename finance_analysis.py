@@ -2,6 +2,7 @@
 from copy import deepcopy
 from itertools import combinations
 import re
+from technology_news import TECH_KEYS, TECH_LABELS, technology_category, technology_explanation
 
 TOPICS = (
     ('reserves', r'外汇基金|储备基金'),
@@ -9,6 +10,7 @@ TOPICS = (
     ('regulation', r'征求意见|监管规则|监管规定|反垄断|监管办法'),
     ('stability', r'金融稳定|系统性风险|资产估值|估值过高|流动性风险'),
     ('remittances', r'海外汇款|侨汇'),
+    ('money_market', r'同业拆息|银行间利率|隔夜拆息|\b(?:HIBOR|SHIBOR|SOFR)\b'),
     ('cooperation', r'(?:人工智能|科技|芯片|供应链).*(?:合作|宣言|工作组)|(?:合作|宣言).*(?:人工智能|科技|芯片|供应链)'),
     ('policy', r'加息|降息|政策利率|利率决议|货币政策|(?:美联储|央行).*(?:收紧|宽松)'),
     ('inflation', r'通胀|通缩|滞胀|消费者物价|价格压力|\b(?:cpi|pce|inflation)\b'),
@@ -18,7 +20,7 @@ TOPICS = (
     ('bonds', r'国债期货|债券价格'),
     ('energy', r'原油|油价|石油|天然气|布伦特|欧佩克|\b(?:wti|opec)\b'),
     ('gold', r'黄金|金价|白银'),
-    ('fiscal', r'财政|赤字|政府预算|国债发行'),
+    ('fiscal', r'财政(?!部长|部官员|部发言人)|赤字|政府预算|国债发行'),
     ('investment', r'资本开支|资本支出|数据中心|算力|人工智能|半导体|芯片'),
     ('growth', r'经济增长|经济衰退|零售销售|采购经理|消费需求|工业产出|\b(?:gdp|pmi)\b'),
     ('fx', r'汇率|外汇|人民币|日元|英镑|欧元(?!区)|美元指数'),
@@ -27,7 +29,7 @@ LABELS = dict(policy='货币政策', inflation='通胀', jobs='就业', yields='
               credit='信用风险', energy='能源', gold='贵金属', trade='贸易政策',
               fiscal='财政', investment='投资与产业', growth='经济活动', fx='汇率',
               reserves='公共储备', regulation='监管', stability='金融稳定',
-              remittances='海外汇款', cooperation='科技与供应链合作', bonds='债券价格')
+              remittances='海外汇款', cooperation='科技与供应链合作', bonds='债券价格', money_market='短期资金利率')
 REGIONS = (('美国', r'美国|美联储|美债|波士顿联储|纽约联储'), ('中国', r'中国|中国人民银行|人民币|国家统计局|全国城镇'),
            ('欧元区', r'欧元区|欧洲央行'), ('英国', r'英国|英格兰银行'), ('日本', r'日本|日本央行'),
            ('香港', r'香港'), ('加拿大', r'加拿大'), ('澳大利亚', r'澳大利亚'), ('菲律宾', r'菲律宾'))
@@ -40,7 +42,7 @@ def has(pattern, text):
 def stage(text, topic):
     if has(r'否认|尚未决定|并未决定|不代表|没有宣布|不会|未(?:加息|降息|违约|生效|通过)', text):
         return 'uncertain'
-    if has(r'征求意见|提议|草案|拟议|拟将|考虑|讨论|计划|建议|威胁', text):
+    if has(r'征求意见|提议|草案|拟议|拟将|考虑|讨论|计划|建议|威胁|将.{0,20}(?:建设|建.*厂|投产)', text):
         return 'proposal'
     if has(r'预计|预期|预测|有望|或将|可能|料将|料.*(?:升|降)|警告.*风险', text):
         return 'forecast'
@@ -71,7 +73,7 @@ def direction(text, topic):
         up, down = r'加征|上调|提高|扩大制裁|收紧|新增制裁', r'下调|降低|取消|豁免|放宽'
     else:
         up = r'上升|上涨|升至|增加|增长|走高|上行|回升|反弹|加速|升值|抬升|推高|攀升|创新高|涨\s*\d'
-        down = r'下降|下跌|降至|减少|走低|下行|回落|放缓|走弱|贬值|减速|创新低|跌\s*\d'
+        down = r'下降|下跌|下滑|降至|减少|走低|下行|回落|放缓|走弱|贬值|减速|创新低|跌\s*\d'
     rising, falling = has(up,text), has(down,text)
     if rising and falling:
         return 'mixed'
@@ -85,9 +87,17 @@ def profile(point, facts):
     generic_titles={'宏观经济与央行','债券利率与信用','外汇与全球市场','能源与大宗商品','政策监管与地缘风险','行业与科技趋势'}
     title = '' if updated or point['title'] in generic_titles else point['title']
     text = title+'。'+body
+    # Classify updates from their displayed new facts, never the old headline.
+    technology=technology_category({'title':body if updated else title})
+    if not technology and not updated:
+        technology=next((f.get('category') for f in facts if f.get('category') in TECH_KEYS),None)
+    if technology and not has(dict(TOPICS)['cooperation'],text):
+        return {'topic':technology,'direction':'unknown','stage':stage(text,technology),
+                'regions':[name for name,pattern in REGIONS if has(pattern,text)],'text':text,
+                'metric':TECH_LABELS[technology],'energy_metric':'price','energy_supply':False}
     topic='other'
     for value in (title,body):
-        protected=next((key for key,pattern in TOPICS[:6] if has(pattern,value)),None)
+        protected=next((key for key,pattern in TOPICS if key in {'reserves','trade','regulation','stability','remittances','money_market','cooperation'} and has(pattern,value)),None)
         candidates=[(match.start(),rank,key) for rank,(key,pattern) in enumerate(TOPICS)
                     if (match:=re.search(pattern,value,re.I))]
         if protected or candidates:
@@ -103,6 +113,7 @@ def profile(point, facts):
 def explain(meta):
     topic, change, status = meta['topic'], meta['direction'], meta['stage']
     conditional = status in {'forecast','proposal','statement','uncertain'}
+    if topic in TECH_KEYS:return technology_explanation(topic,meta['text'],status)
     lead = {'forecast':'这是预测或风险判断，不能当作已经实现的结果。',
             'proposal':'目前仍涉及提议、讨论或待落实措施，不能按已生效处理。',
             'statement':'这是政策表态，尚不足以确认正式利率决定。',
@@ -136,6 +147,10 @@ def explain(meta):
         analysis='关键在偿付能力、融资可得性和损失承担方，应把单一主体风险与系统性风险分开。'
         impact='若信用压力扩大，相关借款人的再融资条件可能收紧，并影响债权人和上下游现金流；能否扩散取决于敞口与处置安排。'
         watch='正式偿付安排、相关敞口和信用利差，避免把传闻当作违约确认。'
+    elif topic == 'money_market':
+        analysis='这是特定币种与期限的资金利率，应区分隔夜流动性、长期融资及汇率；不同期限涨跌混合不能概括成全面宽松或收紧。'
+        impact='短期资金利率变化可能影响相应期限的融资与对冲成本；是否传至更广泛信贷，取决于持续性、期限结构和银行传导。'
+        watch='隔夜与较长期限利差、成交量、流动性安排和后续持续性。'
     elif topic == 'bonds':
         analysis='债券价格与收益率通常反向变化，但期货还受交割、基差和持仓影响，不能把期货涨跌幅直接换算成利率变化。'
         impact=('若价格下跌也反映在现券收益率上，新增融资成本可能面临上行压力；单次期货波动不足以确认融资环境收紧。' if change=='down' else
@@ -148,6 +163,10 @@ def explain(meta):
         impact={'up':'若能源涨价持续，下游生产运输成本和生活支出可能增加，上游收入可能受益；对通胀的传导取决于持续性和成本转嫁。',
                 'down':'若能源降价持续，下游成本和居民支出压力可能缓解，上游收入可能承压；若源于需求走弱，还需同时观察增长风险。'}.get(change,'若措施改变有效供给或运输成本，可能传导至能源价格和下游成本；当前材料不足以确定价格方向及幅度。')
         watch='实际供应、库存、运输状况和终端价格是否出现持续变化。'
+        if has(r'过剩|供过于求',meta['text']):
+            analysis='供需过剩判断依赖未来产量、需求和库存假设，应与已经实现的库存变化分开。'
+            impact='若供给持续超过需求，库存可能累积并给价格带来下行压力；减产、需求回升或供应中断都可能改变这一判断。'
+            watch='预测假设、实际供需、库存及产油方政策是否一致。'
         if meta['energy_metric']=='output':
             analysis='这是产量数据，应区分绝对产量、同比增速和实际可供量；增产不能直接解释成能源涨价。'
             impact=('若增产持续，可能改善相关地区供应保障，但价格是否承压仍取决于需求、进口、库存及全球供给。' if change=='up' else
@@ -221,10 +240,29 @@ def relate(left, right):
            '地区或适用范围未完全一致，只作机制对照。')
     if a==b:
         contrary={left['direction'],right['direction']}=={'up','down'}
-        title=LABELS.get(a,'同类事件')+'线索对照'
+        title=TECH_LABELS.get(a,LABELS.get(a,'同类事件'))+'线索对照'
         text=('两项方向相反，应先核对指标、期限和时点，再判断是否存在真实分歧。' if contrary else
               '两项消息涉及同一传导渠道，应核对口径与时间范围；多条报道不自动构成独立验证。')
         watch='比较原始口径、覆盖范围及后续数据，确认信号是否持续。'
+    elif pair=={'tech_ai','tech_chips'} or pair=={'tech_ai','tech_cloud'}:
+        title='人工智能与计算基础设施'
+        text='模型能力、计算资源与软件服务存在供需联系；但不同公司的发布不能自动互相证明性能或订单增长，应核对实际兼容与部署。'
+        watch='相同任务下的成本、兼容性和真实部署反馈。'
+    elif pair=={'tech_security','tech_cloud'}:
+        if not any(has(r'云|软件|数据库|操作系统|服务|平台',m['text']) for m in (left,right) if m['topic']=='tech_security'):return None
+        title='数字基础设施与安全约束'
+        text='安全事件可能影响软件服务的部署和维护要求；需确认受影响产品是否一致，不能把一项漏洞归到无关平台。'
+        watch='受影响版本、服务依赖、补丁和恢复进度。'
+    elif 'investment' in pair and pair & {'tech_ai','tech_chips','tech_cloud','tech_robotics'}:
+        title='科技进展与产业投入'
+        text='技术能力和实际投入可以相互制约，但发布或演示不能直接转化成收入；需核对投入是否对应同一产品、任务与交付条件。'
+        watch='相关订单、实际资本支出、使用率和交付验证。'
+    elif 'trade' in pair and pair & {'tech_chips','tech_ai','tech_cloud'}:
+        trade=left if a=='trade' else right
+        if not has(r'芯片|半导体|人工智能|技术|算力|云计算',trade['text']):return None
+        title='技术供应与贸易规则'
+        text='贸易规则可能改变技术获取、交付和合规成本；需核对产品范围、生效时间与豁免，不能把所有技术发布都当成限制措施的结果。'
+        watch='正式适用清单、实际供应安排和替代方案的验证。'
     elif pair=={'inflation','policy'}:
         title='价格压力与政策选择'
         text='通胀影响政策权衡，政策又通过融资和需求影响价格；应比较物价信号与政策立场是否一致，不能把单次数据当成决定。'
@@ -289,11 +327,14 @@ def add_event_analysis(brief, packet, preserve_impact=False):
         if not all(f.get('kind')=='news' for f in facts):
             profiles.append(None);continue
         meta=profile(point,facts);explanation=explain(meta)
+        point['section']='technology' if meta['topic'] in TECH_KEYS else point.get('section','finance')
         point['analysis']=explanation['analysis']
         if not preserve_impact:
             point['impact']=explanation['impact'];point['watch']=explanation['watch']
         point['analysis_basis']={key:value for key,value in meta.items() if key!='text'}
         profiles.append(meta)
+    if any(p.get('section')=='technology' for p in result['points']):
+        result.setdefault('next_watch',[]).append('核对科技事件的正式披露、独立验证、实际部署与安全约束。')
     links=[];used_pairs=set()
     for i,j in combinations(range(len(profiles)),2):
         if profiles[i] is None or profiles[j] is None:continue
@@ -312,7 +353,11 @@ def add_event_analysis(brief, packet, preserve_impact=False):
         if signals:link['analysis']='本期线索：'+'；'.join(signals)+'。'+link['analysis']
         link['evidence_ids']=list(dict.fromkeys(result['points'][i]['evidence_ids']+result['points'][j]['evidence_ids']))
         links.append(link);used_pairs.add(pair)
-        if len(links)==3:break
-    result['connections']=links
+    # Reserve a place for technology relationships when supported, without
+    # dropping all financial comparisons or forcing a relationship to exist.
+    tech_links=[link for link in links if any(result['points'][n-1].get('section')=='technology' for n in link['point_numbers'])]
+    selected=links[:3]
+    if tech_links and not any(link in selected for link in tech_links):selected=selected[:2]+tech_links[:1]
+    result['connections']=selected
     result['connection_note']='关联分析仅使用本期入选事件；传导机制不等于已证实因果。' if links else '本期入选事件缺少足够的共同线索，暂不强行关联。'
     return result

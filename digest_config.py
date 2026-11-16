@@ -15,7 +15,7 @@ def load_config(path):
     config.setdefault('request_timeout', 8)
     config.setdefault('max_workers', 3)
     if config['mode'] != 'financial_news' or config['watchlist']:
-        raise ValueError('此程序仅支持金融新闻摘要，watchlist 必须为空')
+        raise ValueError('此程序仅支持金融与科技新闻摘要，watchlist 必须为空')
     for key, low, high in [('request_timeout', 1, 30), ('max_workers', 1, 8)]:
         value = config[key]
         if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
