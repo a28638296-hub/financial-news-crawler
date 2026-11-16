@@ -158,15 +158,17 @@ def collect_brief(now, config_path=None, output_dir=None, history=None):
             persist_focus_views(output_dir,snapshot,data['summary'],text)
             return None,{'points':0,'news_items':[],**details}
         raise RuntimeError('未取得新鲜金融重点，未发送旧闻或空白总结')
-    brief['overview']='金融重点：按重要性整理过去24小时的金融事件及可能影响。'
-    brief['caveat']='本版采用新闻重点摘录与规则分析；媒体报道不等于官方确认，影响解释为条件性分析。'
+    brief['overview']='金融重点：逐条分析新增事件、可能影响，并对照相关线索。'
+    brief['caveat']='本版依据报道内容与经济传导规则分析；媒体报道不等于官方确认，可能影响及事件关联不代表已发生的市场反应或已证实因果。'
     if data['summary']['gaps']:
         brief['caveat']+='部分来源覆盖有限。'
     text=render_text(brief,packet);validate_focus_text(text)
     atomic_json(snapshot/'financial-brief.json',{'mode':'rules_summary','brief':brief,'evidence':packet,'source_urls':urls})
     (snapshot/'financial-brief.txt').write_text(text,encoding='utf-8')
     persist_focus_views(output_dir,snapshot,data['summary'],text)
-    return text,{'points':len(brief['points']),'news_items':delivered_items(brief,packet,urls),**details}
+    return text,{'points':len(brief['points']),'analyzed_events':sum(bool(p.get('analysis')) for p in brief['points']),
+                'event_connections':len(brief.get('connections',[])),
+                'news_items':delivered_items(brief,packet,urls),**details}
 
 
 def main():

@@ -9,7 +9,7 @@ from finance_core import news_importance
 
 STOCK_STORY = re.compile(r'个股|股价|目标价|买入评级|卖出评级|涨停|跌停|连板|盘前[涨跌]|盘后[涨跌]|ETF|\b(?:shares? (?:jump|surge|fall|rise|drop)|price target|stock picks?|buy rating)\b', re.I)
 SYSTEMIC = re.compile(r'美联储|央行|通胀|非农|就业|失业|利率|国债|美债|信用|关税|制裁|原油|石油|黄金|外汇|汇率|全球|金融稳定|系统性|\b(?:inflation|federal reserve|central bank|treasury|tariff|gdp|cpi|pce|payroll)\b', re.I)
-FORBIDDEN_OUTPUT = re.compile(r'短线|波段|选股|目标价|买入|卖出|个股|股票代码|观察名单|止盈|止损|ETF|(?<![A-Za-z0-9_])(?:AAPL|MSFT|NVDA|AMZN|GOOGL|JPM|XOM|LLY|SPY|QQQ|IWM|TLT|HYG|UUP|GLD|USO)(?![A-Za-z0-9_])', re.I)
+FORBIDDEN_OUTPUT = re.compile(r'短线|波段|选股|目标价|买入|卖出|个股|股票代码|观察名单|止盈|止损|超配|低配|偏好投资|建议配置|ETF|(?<![A-Za-z0-9_])(?:AAPL|MSFT|NVDA|AMZN|GOOGL|JPM|XOM|LLY|SPY|QQQ|IWM|TLT|HYG|UUP|GLD|USO)(?![A-Za-z0-9_])', re.I)
 HYPE = re.compile(r'板上钉钉|稳赚|暴赚|必涨|必跌|翻倍机会|闭眼买|guaranteed (?:profit|return)', re.I)
 ROUNDUP = re.compile(r'你需要了解|全球要闻|要闻汇总|一文看懂|财经早报|财经晚报|盘前.*要闻|一周.*回顾|\b(?:morning briefing|what to know before|news roundup)\b',re.I)
 
@@ -40,7 +40,7 @@ def same_financial_event(left,right):
 
 def relevant_financial_news(item):
     title = item.get('title', '')
-    if STOCK_STORY.search(title) or ROUNDUP.search(title) or re.search(r'建议询问主管部门|不予置评|无可奉告',title):
+    if STOCK_STORY.search(title) or FORBIDDEN_OUTPUT.search(title) or ROUNDUP.search(title) or re.search(r'建议询问主管部门|不予置评|无可奉告',title):
         return False
     category = classify(item)
     if category == 'industry' and not re.search(r'融资|债务|资本开支|资本支出|投资|需求|订单|产能|出口|供应链|供需|收入|营收|盈利|利润|成本|\b(?:financ|investment|demand|capacity|supply|revenue|profit|capital spending)', title, re.I):

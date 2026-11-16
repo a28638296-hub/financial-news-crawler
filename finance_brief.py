@@ -13,9 +13,10 @@ from zoneinfo import ZoneInfo
 
 from finance_overview import classify, CATEGORIES, CHINESE_CATEGORIES
 from finance_focus import select_focus_news, priority, validate_focus_text, FORBIDDEN_OUTPUT, persist_focus_views, focus_category, focus_excerpt, same_financial_event, published_time, HYPE
+from finance_analysis import add_event_analysis
 
 SG = ZoneInfo("Asia/Singapore")
-VERSION = "chinese-financial-focus-v3.4"
+VERSION = "chinese-financial-focus-v4.0"
 SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
@@ -126,7 +127,10 @@ def displayed_strings(brief):
     values = [brief.get("overview", ""), brief.get("caveat", "")]
     values.extend(brief.get("next_watch", []))
     for point in brief.get("points", []):
-        values.extend(point.get(key, "") for key in ("title", "fact", "impact", "watch"))
+        values.extend(point.get(key, "") for key in ("title", "fact", "analysis", "impact", "watch"))
+    for link in brief.get('connections',[]):
+        values.extend(link.get(key,'') for key in ('title','analysis','watch'))
+    values.append(brief.get('connection_note',''))
     return values
 
 
@@ -154,7 +158,7 @@ def validate_brief(brief, evidence_ids):
             raise ValueError("摘要包含未归纳的英文段落")
     cjk = len(re.findall(r"[\u3400-\u9fff]", text))
     latin = len(re.findall(r"[A-Za-z]", text))
-    if cjk < 150 or cjk < latin or len(text) > 2300:
+    if cjk < 150 or cjk < latin or len(text) > (5000 if 'connections' in brief else 2300):
         raise ValueError("摘要不是简洁的中文重点")
 
 
@@ -333,9 +337,12 @@ def local_news_brief(packet):
     market = fallback_brief(packet)
     if not packet.get('focus_only'):
         points.extend(market['points'][:max(0, 6-len(points))])
-    return {'overview':'本地简版金融重点：按主题整理过去24小时的中文报道，并说明可能的影响。',
+    brief = {'overview':'金融重点：逐条分析过去24小时的新事件，并对照相关线索。',
             'points':points, 'next_watch':['跟踪宏观数据、央行表态及重大政策是否改变通胀、融资成本和经济活动。'],
             'caveat':'在线AI归纳暂不可用，本版使用新闻重点摘录与规则分析；媒体报道不等于官方确认，部分来源可能缺失。'}
+    if packet.get('focus_only'):
+        brief['caveat']='本版依据报道内容与经济传导规则分析；媒体报道不等于官方确认，可能影响及事件关联不代表已发生的市场反应或已证实因果。'
+    return add_event_analysis(brief,packet) if packet.get('focus_only') else brief
 
 
 def render_text(brief, packet):
@@ -345,7 +352,16 @@ def render_text(brief, packet):
         lines.append("美股日线截至：" + "、".join(packet["market_dates"]))
     lines += ["", brief["overview"], ""]
     for index, point in enumerate(brief["points"], 1):
-        lines += [f"{index}. {point['title']}", point["fact"], "影响：" + point["impact"], "关注：" + point["watch"], ""]
+        lines += [f"{index}. {point['title']}", point["fact"]]
+        if point.get('analysis'):
+            lines.append('分析：'+point['analysis'])
+        lines += ["可能影响：" + point["impact"], "后续观察：" + point["watch"], ""]
+    if 'connections' in brief:
+        lines.append('事件关联分析')
+        for link in brief['connections']:
+            related='、'.join(str(n) for n in link['point_numbers'])
+            lines += [f"• {link['title']}（第{related}条）",link['analysis'],'验证线索：'+link['watch'],'']
+        lines += [brief.get('connection_note',''),'']
     if brief["next_watch"]:
         lines += ["接下来关注："] + ["• " + text for text in brief["next_watch"]] + [""]
     if brief["caveat"]:
@@ -371,6 +387,8 @@ def generate_brief(snapshot, config):
         if packet.get('focus_only'):
             validate_focus_text(render_text(brief, packet))
         mode = "ai_summary"
+        if packet.get('focus_only'):
+            brief=add_event_analysis(brief,packet,preserve_impact=True)
     except Exception as failure:
         brief = local_news_brief(packet)
         mode = 'local_news_summary' if brief else 'data_only'

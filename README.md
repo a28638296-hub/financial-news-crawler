@@ -3,7 +3,7 @@
 [![Tests](https://github.com/a28638296-hub/financial-news-crawler/actions/workflows/tests.yml/badge.svg)](https://github.com/a28638296-hub/financial-news-crawler/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-采集公开财经快讯与 RSS，生成“发生了什么 → 可能影响 → 接下来关注什么”的中文金融简报。适合跟踪宏观经济、央行、利率、汇率、能源与重大政策。
+采集公开财经快讯与 RSS，生成“发生了什么 → 事件分析 → 可能影响 → 后续观察”的中文金融简报，并对有共同依据的事件进行关联分析。适合跟踪宏观经济、央行、利率、汇率、能源与重大政策。
 
 **不需要付费 AI API。默认生成本地预览；邮件为可选功能。**
 
@@ -12,6 +12,8 @@
 - 预配置 13 个来源，包括新浪财经、华尔街见闻、美联储、BEA、欧洲央行及财经媒体 RSS。
 - 只选过去 24 小时、有明确发布时间的新闻；更新时间、未知日期和未来日期不会充当新发布新闻。
 - 按金融重要性、来源标记、时效与报道覆盖排序，最多整理 6 条重点；不是全网热搜榜。
+- 逐条分析事件的传导路径与影响条件，区分已发生事实、预测、政策表态和待落实提议。
+- 最多三组关联分析，标明关联条目，比较共同因素、方向差异和地区差异；依据不足时不强行关联。
 - 合并格式和快讯前缀差异，保留不同国家、发言人、数字、方向等事实变化。
 - 每个来源独立处理失败；坏条目单独跳过并记录原因类别、数量与耗时。
 - 保存正文、HTML、来源证据及运行状态。邮件为无链接、无附件的中文纯文本。
@@ -85,7 +87,7 @@ python -m unittest discover -p "test_*.py"
 
 测试使用模拟网络与邮件，不需要个人密钥，不发送真实邮件。CI 验证 Linux Python 3.12 / 3.14 和 Windows Python 3.12。
 
-主要模块：`finance_feeds.py` 采集，`finance_focus.py` 选择和去重，`finance_brief.py` 中文摘录与规则解释，`digest_config.py` 配置验证，`cloud_run.py` 命令行、报告及投递。部分底层模块保留历史研究接口兼容性，当前入口固定为金融新闻模式，不生成证券推荐。
+主要模块：`finance_feeds.py` 采集，`finance_focus.py` 选择和去重，`finance_brief.py` 中文摘录与呈现，`finance_analysis.py` 事件影响和关联分析，`digest_config.py` 配置验证，`cloud_run.py` 命令行、报告及投递。部分底层模块保留历史研究接口兼容性，当前入口固定为金融新闻模式，不生成证券推荐。分析方法与限制见 [事件分析说明](docs/analysis.md)。
 
 ## 许可证与数据
 
